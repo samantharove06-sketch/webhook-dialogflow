@@ -3,10 +3,9 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
-// =====================================
-// PRECIOS DE LOS PRODUCTOS
-// =====================================
+const PORT = process.env.PORT || 3000;
 
+// Precios de los productos
 const precios = {
   producto_labial: 55.00,
   producto_base: 125.00,
@@ -15,10 +14,7 @@ const precios = {
   producto_mascara: 49.50
 };
 
-// =====================================
-// NOMBRES DE LOS PRODUCTOS
-// =====================================
-
+// Nombres de los productos
 const nombres = {
   producto_labial: "labiales",
   producto_base: "bases",
@@ -27,11 +23,8 @@ const nombres = {
   producto_mascara: "máscaras"
 };
 
-// =====================================
-// CANTIDADES MÁXIMAS POR PRODUCTO
-// =====================================
-
-const cantidades = {
+// Cantidades máximas por producto
+const parametrosCantidad = {
   producto_labial: "cantLabial",
   producto_base: "cantBase",
   producto_iluminador: "cantIluminador",
@@ -39,265 +32,164 @@ const cantidades = {
   producto_mascara: "cantMascara"
 };
 
-// =====================================
-// WEBHOOK DE DIALOGFLOW
-// =====================================
+app.post("/", (req, res) => {
 
-app.post("/webhook", (req, res) => {
+  const queryResult = req.body.queryResult || {};
+  const intent = queryResult.intent?.displayName || "";
 
-  const queryResult = req.body.queryResult;
+  // Cantidad solicitada
+  let cantidad = Number(queryResult.parameters?.cantidad || 1);
 
-  if (!queryResult) {
-    return res.json({
-      fulfillmentText: "No pude recibir la información de la compra."
-    });
+  if (!Number.isFinite(cantidad) || cantidad < 1) {
+    cantidad = 1;
   }
 
-  // Nombre del intent que detectó Dialogflow
-  const intent = queryResult.intent.displayName;
+  cantidad = Math.floor(cantidad);
 
-  // Cantidad enviada por el usuario
-  const cantidad = Number(queryResult.parameters.cantidad);
-
-  // =====================================
-  // OBTENER EL CARRITO ACTUAL
-  // =====================================
-
-  let totalCarrito = 0;
-
-  let cantLabial = 0;
-  let cantBase = 0;
-  let cantIluminador = 0;
-  let cantSombras = 0;
-  let cantMascara = 0;
-
-  // Buscar nuestro contexto del carrito
+  // Contexto actual del carrito
   const contextos = queryResult.outputContexts || [];
 
-  const carritoContexto = contextos.find(contexto =>
-    contexto.name.includes("carrito_context")
+  let carrito = contextos.find(
+    c => c.name.endsWith("/contexts/carrito_context")
   );
 
-  if (carritoContexto && carritoContexto.parameters) {
+  let parametros = carrito?.parameters || {};
 
-    const p = carritoContexto.parameters;
+  // Valores actuales del carrito
+  let totalCarrito = Number(parametros.totalCarrito || 0);
 
-    totalCarrito = Number(p.totalCarrito) || 0;
+  let cantLabial = Number(parametros.cantLabial || 0);
+  let cantBase = Number(parametros.cantBase || 0);
+  let cantIluminador = Number(parametros.cantIluminador || 0);
+  let cantSombras = Number(parametros.cantSombras || 0);
+  let cantMascara = Number(parametros.cantMascara || 0);
 
-    cantLabial = Number(p.cantLabial) || 0;
-    cantBase = Number(p.cantBase) || 0;
-    cantIluminador = Number(p.cantIluminador) || 0;
-    cantSombras = Number(p.cantSombras) || 0;
-    cantMascara = Number(p.cantMascara) || 0;
-  }
-
-  // =====================================
-  // SI ES UN PRODUCTO
-  // =====================================
+  // --------------------------------------------------
+  // PRODUCTOS
+  // --------------------------------------------------
 
   if (precios[intent]) {
 
-    // Verificar que exista una cantidad
-    if (!cantidad || cantidad < 1) {
-
-      return res.json({
-        fulfillmentText:
-          "Por favor, indica una cantidad válida del producto que deseas."
-      });
-    }
-
-    // =====================================
-    // LÍMITE DE 5
-    // =====================================
-
-    if (cantidad > 5) {
-
-      return res.json({
-        fulfillmentText:
-          "Lo siento, el límite es de 5 artículos del mismo producto. Por favor, indica una cantidad de 1 a 5."
-      });
-    }
-
-    // =====================================
-    // PRECIO DEL PRODUCTO
-    // =====================================
-
     const precio = precios[intent];
+    const nombre = nombres[intent];
+    const parametroCantidad = parametrosCantidad[intent];
 
-    // Calcular subtotal
+    let cantidadActual = Number(parametros[parametroCantidad] || 0);
+
+    // Comprobar límite máximo de 5
+    if (cantidadActual + cantidad > 5) {
+
+      const disponibles = 5 - cantidadActual;
+
+      if (disponibles <= 0) {
+        return res.json({
+          fulfillmentText:
+            `Ya tienes el máximo de 5 ${nombre} en tu carrito. ` +
+            `No puedes agregar más de este producto.`
+        });
+      }
+
+      return res.json({
+        fulfillmentText:
+          `Solo puedes agregar ${disponibles} ${nombre} más. ` +
+          `El máximo permitido es de 5 ${nombre}.`
+      });
+    }
+
+    // Subtotal del producto
     const subtotal = cantidad * precio;
 
-    // =====================================
-    // ACTUALIZAR CANTIDAD DEL PRODUCTO
-    // =====================================
-
-    if (intent === "producto_labial") {
-      cantLabial += cantidad;
-    }
-
-    if (intent === "producto_base") {
-      cantBase += cantidad;
-    }
-
-    if (intent === "producto_iluminador") {
-      cantIluminador += cantidad;
-    }
-
-    if (intent === "producto_sombras") {
-      cantSombras += cantidad;
-    }
-
-    if (intent === "producto_mascara") {
-      cantMascara += cantidad;
-    }
-
-    // =====================================
-    // COMPROBAR QUE EL TOTAL DEL PRODUCTO
-    // NO SUPERE 5
-    // =====================================
-
-    const nombreCantidad = cantidades[intent];
-
-    let cantidadActual = 0;
-
-    if (nombreCantidad === "cantLabial") {
-      cantidadActual = cantLabial;
-    }
-
-    if (nombreCantidad === "cantBase") {
-      cantidadActual = cantBase;
-    }
-
-    if (nombreCantidad === "cantIluminador") {
-      cantidadActual = cantIluminador;
-    }
-
-    if (nombreCantidad === "cantSombras") {
-      cantidadActual = cantSombras;
-    }
-
-    if (nombreCantidad === "cantMascara") {
-      cantidadActual = cantMascara;
-    }
-
-    if (cantidadActual > 5) {
-
-      return res.json({
-        fulfillmentText:
-          `Ya tienes ${cantidadActual - cantidad} ${nombres[intent]}. Solo puedes tener un máximo de 5 del mismo producto.`
-      });
-    }
-
-    // =====================================
-    // SUMAR AL CARRITO
-    // =====================================
-
+    // Agregar al carrito
     totalCarrito += subtotal;
+    parametros[parametroCantidad] = cantidadActual + cantidad;
 
-    // =====================================
-    // GUARDAR EL CARRITO EN EL CONTEXTO
-    // =====================================
+    // Actualizar las cantidades
+    cantLabial = Number(parametros.cantLabial || 0);
+    cantBase = Number(parametros.cantBase || 0);
+    cantIluminador = Number(parametros.cantIluminador || 0);
+    cantSombras = Number(parametros.cantSombras || 0);
+    cantMascara = Number(parametros.cantMascara || 0);
 
-    const session = req.body.session;
-
-    const contextName =
-      `${session}/contexts/carrito_context`;
-
-    // =====================================
-    // RESPUESTA PARA EL USUARIO
-    // =====================================
-
-    const respuesta =
-      `Has seleccionado ${cantidad} ${nombres[intent]}. ` +
-      `El precio por pieza es de $${precio.toFixed(2)} MXN. ` +
-      `Tu subtotal es de $${subtotal.toFixed(2)} MXN. ` +
-      `Tu carrito lleva $${totalCarrito.toFixed(2)} MXN. ` +
-      `¿Deseas agregar otro producto?`;
+    parametros.totalCarrito = totalCarrito;
 
     return res.json({
-
-      fulfillmentText: respuesta,
-
-      outputContexts: [
-        {
-          name: contextName,
-          lifespanCount: 20,
-
-          parameters: {
-
-            totalCarrito: totalCarrito,
-
-            cantLabial: cantLabial,
-            cantBase: cantBase,
-            cantIluminador: cantIluminador,
-            cantSombras: cantSombras,
-            cantMascara: cantMascara
-          }
-        }
-      ]
-    });
-  }
-
-  // =====================================
-  // FINALIZAR COMPRA
-  // =====================================
-
-  if (intent === "finalizar_compra") {
-
-    return res.json({
-
       fulfillmentText:
-        `Tu total de compra es de $${totalCarrito.toFixed(2)} MXN. ¿Deseas confirmar tu compra?`,
+        `Has seleccionado ${cantidad} ${nombre}. ` +
+        `El precio por pieza es de $${precio.toFixed(2)} MXN. ` +
+        `Tu subtotal es de $${subtotal.toFixed(2)} MXN. ` +
+        `Tu carrito lleva $${totalCarrito.toFixed(2)} MXN. ` +
+        `¿Deseas agregar otro producto?`,
 
       outputContexts: [
         {
           name: `${req.body.session}/contexts/carrito_context`,
           lifespanCount: 20,
-
-          parameters: {
-
-            totalCarrito: totalCarrito,
-
-            cantLabial: cantLabial,
-            cantBase: cantBase,
-            cantIluminador: cantIluminador,
-            cantSombras: cantSombras,
-            cantMascara: cantMascara
-          }
+          parameters: parametros
         }
       ]
     });
   }
 
-  // =====================================
-  // CONFIRMAR COMPRA
-  // =====================================
+  // --------------------------------------------------
+  // FINALIZAR COMPRA
+  // --------------------------------------------------
 
-  if (intent === "confirmar_compra") {
+  if (intent === "finalizar_compra") {
+
+    if (totalCarrito <= 0) {
+      return res.json({
+        fulfillmentText:
+          "Tu carrito está vacío. Primero agrega algún producto."
+      });
+    }
 
     return res.json({
-
       fulfillmentText:
-        `¡Compra confirmada! El total de tu compra es de $${totalCarrito.toFixed(2)} MXN. ¡Gracias por tu compra!`
+        `El total de tu compra es de $${totalCarrito.toFixed(2)} MXN. ` +
+        `¿Deseas confirmar tu compra?`,
+
+      outputContexts: [
+        {
+          name: `${req.body.session}/contexts/carrito_context`,
+          lifespanCount: 20,
+          parameters: parametros
+        }
+      ]
     });
   }
 
-  // =====================================
-  // RESPUESTA GENERAL
-  // =====================================
+  // --------------------------------------------------
+  // CONFIRMAR COMPRA
+  // --------------------------------------------------
+
+  if (intent === "confirmar_compra") {
+
+    if (totalCarrito <= 0) {
+      return res.json({
+        fulfillmentText:
+          "No hay productos en tu carrito para confirmar."
+      });
+    }
+
+    const totalFinal = totalCarrito;
+
+    return res.json({
+      fulfillmentText:
+        `¡Compra confirmada! 🎉 ` +
+        `El total de tu compra es de $${totalFinal.toFixed(2)} MXN. ` +
+        `Gracias por tu compra.`,
+
+      outputContexts: []
+    });
+  }
+
+  // --------------------------------------------------
+  // RESPUESTA POR DEFECTO
+  // --------------------------------------------------
 
   return res.json({
     fulfillmentText:
-      "No pude identificar la acción que deseas realizar."
+      "No pude procesar esa solicitud."
   });
-});
 
-// =====================================
-// INICIAR SERVIDOR
-// =====================================
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Webhook funcionando en el puerto ${PORT}`);
 });

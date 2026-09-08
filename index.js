@@ -5,7 +5,10 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Precios de los productos
+// --------------------------------------------------
+// PRECIOS
+// --------------------------------------------------
+
 const precios = {
   producto_labial: 55.00,
   producto_base: 125.00,
@@ -14,7 +17,10 @@ const precios = {
   producto_mascara: 49.50
 };
 
-// Nombres de los productos
+// --------------------------------------------------
+// NOMBRES DE LOS PRODUCTOS
+// --------------------------------------------------
+
 const nombres = {
   producto_labial: "labiales",
   producto_base: "bases",
@@ -23,7 +29,10 @@ const nombres = {
   producto_mascara: "máscaras"
 };
 
-// Cantidades máximas por producto
+// --------------------------------------------------
+// PARÁMETROS DE CANTIDAD
+// --------------------------------------------------
+
 const parametrosCantidad = {
   producto_labial: "cantLabial",
   producto_base: "cantBase",
@@ -32,13 +41,23 @@ const parametrosCantidad = {
   producto_mascara: "cantMascara"
 };
 
+// --------------------------------------------------
+// WEBHOOK
+// --------------------------------------------------
+
 app.post("/", (req, res) => {
 
   const queryResult = req.body.queryResult || {};
+
   const intent = queryResult.intent?.displayName || "";
 
-  // Cantidad solicitada
-  let cantidad = Number(queryResult.parameters?.cantidad || 1);
+  // ------------------------------------------------
+  // CANTIDAD SOLICITADA
+  // ------------------------------------------------
+
+  let cantidad = Number(
+    queryResult.parameters?.cantidad || 1
+  );
 
   if (!Number.isFinite(cantidad) || cantidad < 1) {
     cantidad = 1;
@@ -46,84 +65,110 @@ app.post("/", (req, res) => {
 
   cantidad = Math.floor(cantidad);
 
-  // Contexto actual del carrito
+  // ------------------------------------------------
+  // OBTENER CARRITO ACTUAL
+  // ------------------------------------------------
+
   const contextos = queryResult.outputContexts || [];
 
-  let carrito = contextos.find(
+  const carrito = contextos.find(
     c => c.name.endsWith("/contexts/carrito_context")
   );
 
-  let parametros = carrito?.parameters || {};
+  const parametros = carrito?.parameters || {};
 
-  // Valores actuales del carrito
-  let totalCarrito = Number(parametros.totalCarrito || 0);
+  // ------------------------------------------------
+  // TOTAL ACTUAL
+  // ------------------------------------------------
 
-  let cantLabial = Number(parametros.cantLabial || 0);
-  let cantBase = Number(parametros.cantBase || 0);
-  let cantIluminador = Number(parametros.cantIluminador || 0);
-  let cantSombras = Number(parametros.cantSombras || 0);
-  let cantMascara = Number(parametros.cantMascara || 0);
+  let totalCarrito = Number(
+    parametros.totalCarrito || 0
+  );
 
-  // --------------------------------------------------
+  // ------------------------------------------------
   // PRODUCTOS
-  // --------------------------------------------------
+  // ------------------------------------------------
 
   if (precios[intent]) {
 
     const precio = precios[intent];
+
     const nombre = nombres[intent];
-    const parametroCantidad = parametrosCantidad[intent];
 
-    let cantidadActual = Number(parametros[parametroCantidad] || 0);
+    const parametroCantidad =
+      parametrosCantidad[intent];
 
-    // Comprobar límite máximo de 5
+    // Cantidad que ya existe en el carrito
+    let cantidadActual = Number(
+      parametros[parametroCantidad] || 0
+    );
+
+    // ----------------------------------------------
+    // LÍMITE MÁXIMO DE 5
+    // ----------------------------------------------
+
     if (cantidadActual + cantidad > 5) {
 
       const disponibles = 5 - cantidadActual;
 
       if (disponibles <= 0) {
+
         return res.json({
           fulfillmentText:
-            `Ya tienes el máximo de 5 ${nombre} en tu carrito. ` +
-            `No puedes agregar más de este producto.`
+            `Ya tienes el máximo de 5 ${nombre} ` +
+            `en tu carrito. No puedes agregar más.`
         });
       }
 
       return res.json({
         fulfillmentText:
-          `Solo puedes agregar ${disponibles} ${nombre} más. ` +
-          `El máximo permitido es de 5 ${nombre}.`
+          `Solo puedes agregar ${disponibles} ` +
+          `${nombre} más. El máximo permitido ` +
+          `es de 5 ${nombre}.`
       });
     }
 
-    // Subtotal del producto
+    // ----------------------------------------------
+    // SUBTOTAL
+    // ----------------------------------------------
+
     const subtotal = cantidad * precio;
 
-    // Agregar al carrito
+    // ----------------------------------------------
+    // SUMAR AL CARRITO
+    // ----------------------------------------------
+
     totalCarrito += subtotal;
-    parametros[parametroCantidad] = cantidadActual + cantidad;
 
-    // Actualizar las cantidades
-    cantLabial = Number(parametros.cantLabial || 0);
-    cantBase = Number(parametros.cantBase || 0);
-    cantIluminador = Number(parametros.cantIluminador || 0);
-    cantSombras = Number(parametros.cantSombras || 0);
-    cantMascara = Number(parametros.cantMascara || 0);
+    parametros[parametroCantidad] =
+      cantidadActual + cantidad;
 
-    parametros.totalCarrito = totalCarrito;
+    parametros.totalCarrito =
+      totalCarrito;
+
+    // ----------------------------------------------
+    // RESPUESTA
+    // ----------------------------------------------
 
     return res.json({
+
       fulfillmentText:
         `Has seleccionado ${cantidad} ${nombre}. ` +
-        `El precio por pieza es de $${precio.toFixed(2)} MXN. ` +
-        `Tu subtotal es de $${subtotal.toFixed(2)} MXN. ` +
-        `Tu carrito lleva $${totalCarrito.toFixed(2)} MXN. ` +
+        `El precio por pieza es de ` +
+        `$${precio.toFixed(2)} MXN. ` +
+        `Tu subtotal es de ` +
+        `$${subtotal.toFixed(2)} MXN. ` +
+        `Tu carrito lleva ` +
+        `$${totalCarrito.toFixed(2)} MXN. ` +
         `¿Deseas agregar otro producto?`,
 
       outputContexts: [
         {
-          name: `${req.body.session}/contexts/carrito_context`,
+          name:
+            `${req.body.session}/contexts/carrito_context`,
+
           lifespanCount: 20,
+
           parameters: parametros
         }
       ]
@@ -137,21 +182,29 @@ app.post("/", (req, res) => {
   if (intent === "finalizar_compra") {
 
     if (totalCarrito <= 0) {
+
       return res.json({
+
         fulfillmentText:
-          "Tu carrito está vacío. Primero agrega algún producto."
+          "Tu carrito está vacío. " +
+          "Primero agrega algún producto."
       });
     }
 
     return res.json({
+
       fulfillmentText:
-        `El total de tu compra es de $${totalCarrito.toFixed(2)} MXN. ` +
+        `El total de tu compra es de ` +
+        `$${totalCarrito.toFixed(2)} MXN. ` +
         `¿Deseas confirmar tu compra?`,
 
       outputContexts: [
         {
-          name: `${req.body.session}/contexts/carrito_context`,
+          name:
+            `${req.body.session}/contexts/carrito_context`,
+
           lifespanCount: 20,
+
           parameters: parametros
         }
       ]
@@ -165,21 +218,54 @@ app.post("/", (req, res) => {
   if (intent === "confirmar_compra") {
 
     if (totalCarrito <= 0) {
+
       return res.json({
+
         fulfillmentText:
-          "No hay productos en tu carrito para confirmar."
+          "No hay productos en tu carrito " +
+          "para confirmar."
       });
     }
 
     const totalFinal = totalCarrito;
 
+    // ----------------------------------------------
+    // CONFIRMACIÓN Y LIMPIEZA DEL CARRITO
+    // ----------------------------------------------
+
     return res.json({
+
       fulfillmentText:
         `¡Compra confirmada! 🎉 ` +
-        `El total de tu compra es de $${totalFinal.toFixed(2)} MXN. ` +
-        `Gracias por tu compra.`,
+        `El total de tu compra es de ` +
+        `$${totalFinal.toFixed(2)} MXN. ` +
+        `Gracias por tu compra. ` +
+        `Tu carrito ha sido vaciado. ` +
+        `Puedes comenzar una nueva compra.`,
 
-      outputContexts: []
+      outputContexts: [
+        {
+          name:
+            `${req.body.session}/contexts/carrito_context`,
+
+          lifespanCount: 20,
+
+          parameters: {
+
+            totalCarrito: 0,
+
+            cantLabial: 0,
+
+            cantBase: 0,
+
+            cantIluminador: 0,
+
+            cantSombras: 0,
+
+            cantMascara: 0
+          }
+        }
+      ]
     });
   }
 
@@ -188,11 +274,21 @@ app.post("/", (req, res) => {
   // --------------------------------------------------
 
   return res.json({
+
     fulfillmentText:
       "No pude procesar esa solicitud."
   });
 
 });
+
+// --------------------------------------------------
+// INICIAR SERVIDOR
+// --------------------------------------------------
+
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en el puerto ${PORT}`);
+
+  console.log(
+    `Servidor escuchando en el puerto ${PORT}`
+  );
+
 });
